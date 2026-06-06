@@ -1,0 +1,37 @@
+Job Title: Junior Python Developer
+Location: [Your City / Remote]
+Employment Type: Full-time
+Department: Engineering
+
+Role Overview
+We are seeking a Junior Python Developer to support the design, development, and maintenance of backend services and internal tools. This is an entry-level role suited for someone with solid Python fundamentals and a growth mindset. You will work closely with senior engineers to deliver reliable, well-tested features and learn modern development practices.
+
+Key Responsibilities
+- Assist in building and maintaining Python applications and REST APIs
+- Write clean, maintainable, and well-documented code
+- Debug issues, fix bugs, and improve existing features
+- Work with databases under guidance (SQL and NoSQL)
+- Participate in code reviews and collaborate with cross-functional teams
+- Follow best practices for testing, version control, and deployment
+
+Required Qualifications
+- Basic to intermediate proficiency in Python
+- Familiarity with Git and standard version control workflows
+- Understanding of REST APIs and JSON
+- Basic knowledge of databases (SQL preferred)
+- Strong communication skills and willingness to learn from feedback
+
+Preferred Qualifications
+- Exposure to frameworks such as Django or Flask
+- Familiarity with unit testing (pytest or unittest)
+- Basic knowledge of Docker or cloud platforms (AWS/Azure/GCP)
+- Personal projects, internships, or coursework in software development
+
+What We Offer
+- Mentorship from senior engineers
+- Opportunities to learn and grow in a supportive environment
+- Hands-on experience with real-world systems and tools
+- A collaborative, inclusive team culture
+
+Equal Opportunity
+We are an equal opportunity employer and value diversity. All qualified applicants will be considered without regard to race, color, religion, gender, sexual orientation, national origin, disability, or veteran status.

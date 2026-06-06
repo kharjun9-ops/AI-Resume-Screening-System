@@ -1,0 +1,18 @@
+.venv/
+venv/
+
+data/Resume Datasets/
+
+__pycache__/
+*.pyc
+
+uploads/
+temp/
+tmp/
+
+*.pdf
+*.docx
+*.jpeg
+
+data/resumes/
+data/testing/

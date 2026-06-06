@@ -1,0 +1,33 @@
+**Job Title: Data Scientist**
+
+**Location:** San Francisco, CA (Hybrid)
+
+**Company Description:**
+We are a fast-growing tech startup at the forefront of AI-driven solutions. We are passionate about using data to solve complex problems and drive business value. Our team is composed of innovators and collaborators who are dedicated to pushing the boundaries of what's possible.
+
+**Job Summary:**
+We are seeking a talented and motivated Data Scientist to join our dynamic team. The ideal candidate will have a strong background in machine learning, statistics, and data analysis. You will be responsible for developing and deploying machine learning models, conducting data-driven research, and providing insights that will shape our products and strategies.
+
+**Key Responsibilities:**
+- Design, develop, and deploy machine learning models to address business challenges.
+- Perform exploratory data analysis to identify trends, patterns, and insights.
+- Work with large and complex datasets, ensuring data quality and integrity.
+- Collaborate with cross-functional teams, including engineering and product management, to integrate ML solutions into our products.
+- Communicate findings and recommendations to both technical and non-technical stakeholders.
+- Stay up-to-date with the latest advancements in machine learning and data science.
+
+**Required Qualifications:**
+- Master's or Ph.D. in Computer Science, Statistics, Mathematics, or a related field.
+- 3+ years of hands-on experience in a data science role.
+- Strong proficiency in Python and its data science libraries (e.g., pandas, numpy, scikit-learn, tensorflow, pytorch).
+- Solid understanding of machine learning algorithms, deep learning, and natural language processing (NLP).
+- Experience with SQL and NoSQL databases.
+- Experience with cloud platforms such as AWS, Azure, or GCP.
+- Excellent problem-solving and analytical skills.
+
+**Preferred Qualifications:**
+- Experience with big data technologies (e.g., Spark, Hadoop).
+- Familiarity with containerization and orchestration tools (e.g., Docker, Kubernetes).
+- Strong communication and teamwork skills.
+- A portfolio of data science projects.
+- Experience in an Agile/Scrum environment.
