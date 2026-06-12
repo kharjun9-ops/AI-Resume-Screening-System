@@ -8,5 +8,4 @@ streamlit
 pandas
 pytesseract
 Pillow
-spacy==3.7.5
-blis==0.7.11
+
