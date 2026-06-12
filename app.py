@@ -4,6 +4,8 @@ import os
 import time
 import tempfile
 import concurrent.futures
+import hashlib
+import json
 from src.text_extraction import extract_text_from_file, extract_text_from_bytes
 from src.text_preprocessing import preprocess_text, preprocess_texts
 from src.feature_extraction import vectorize_text
@@ -19,377 +21,370 @@ from datetime import datetime
 TRAINING_RESUMES_FOLDER = os.path.join("data", "resumes")
 TRAINING_JD_PATH = os.path.join("data", "job_descriptions", "job_description.txt")
 PARTIAL_LABEL = "exclude"
+MANAGERS_FILE = os.path.join("data", "managers.json")
+
+# ── Manager Authentication Helpers ──────────────────────────────────────────
+
+def _hash_password(password: str) -> str:
+    """Return a SHA-256 hex digest of the password."""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+def _load_managers() -> dict:
+    """Load the managers registry from disk."""
+    if os.path.exists(MANAGERS_FILE):
+        try:
+            with open(MANAGERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+    return {}
+
+def _save_managers(managers: dict) -> None:
+    """Persist the managers registry to disk."""
+    os.makedirs(os.path.dirname(MANAGERS_FILE), exist_ok=True)
+    with open(MANAGERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(managers, f, indent=2)
+
+def _manager_signup(username: str, password: str) -> tuple[bool, str]:
+    """Register a new manager. Returns (success, message)."""
+    username = username.strip()
+    if not username or not password:
+        return False, "Username and password cannot be empty."
+    if len(password) < 4:
+        return False, "Password must be at least 4 characters."
+    managers = _load_managers()
+    if username.lower() in {u.lower() for u in managers}:
+        return False, "This username is already taken."
+    managers[username] = _hash_password(password)
+    _save_managers(managers)
+    return True, "Account created! You can now log in."
+
+def _manager_login(username: str, password: str) -> tuple[bool, str]:
+    """Authenticate a manager. Returns (success, message)."""
+    username = username.strip()
+    if not username or not password:
+        return False, "Please enter both username and password."
+    managers = _load_managers()
+    stored_hash = managers.get(username)
+    if stored_hash is None:
+        return False, "Username not found. Please sign up first."
+    if stored_hash != _hash_password(password):
+        return False, "Incorrect password."
+    return True, "Welcome back!"
+
+def render_manager_auth():
+    """Render the login / sign-up UI for the Manager Panel.
+    Returns True if the user is authenticated, False otherwise.
+    """
+    if st.session_state.get("manager_logged_in"):
+        # Already authenticated — show a small welcome + logout in the sidebar
+        st.sidebar.markdown(f"👤 Logged in as **{st.session_state.manager_username}**")
+        if st.sidebar.button("Logout", key="manager_logout"):
+            st.session_state.manager_logged_in = False
+            st.session_state.manager_username = ""
+            st.rerun()
+        return True
+
+    st.header("🔐 Manager Login")
+    st.markdown("Please log in or create an account to access the Manager Panel.")
+
+    auth_tab = st.radio(
+        "Choose action",
+        ["Login", "Sign Up"],
+        horizontal=True,
+        key="auth_tab",
+        label_visibility="collapsed",
+    )
+
+    with st.container(border=True):
+        if auth_tab == "Login":
+            st.subheader("Login")
+            login_user = st.text_input("Username", key="login_user", placeholder="Enter your username")
+            login_pass = st.text_input("Password", type="password", key="login_pass", placeholder="Enter your password")
+            if st.button("Login →", use_container_width=True, type="primary"):
+                ok, msg = _manager_login(login_user, login_pass)
+                if ok:
+                    st.session_state.manager_logged_in = True
+                    st.session_state.manager_username = login_user.strip()
+                    st.success(msg)
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error(msg)
+        else:
+            st.subheader("Create Account")
+            signup_user = st.text_input("Choose a Username", key="signup_user", placeholder="Pick a username")
+            signup_pass = st.text_input("Choose a Password", type="password", key="signup_pass", placeholder="Min 4 characters")
+            signup_pass2 = st.text_input("Confirm Password", type="password", key="signup_pass2", placeholder="Re-enter password")
+            if st.button("Create Account ✨", use_container_width=True, type="primary"):
+                if signup_pass != signup_pass2:
+                    st.error("Passwords do not match.")
+                else:
+                    ok, msg = _manager_signup(signup_user, signup_pass)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+
+    return False
 
 def inject_custom_css():
     st.markdown(
         """
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@400;500;600&display=swap');
 
+            /* Global Background & Mesh Gradient */
             .stApp {
-                background: linear-gradient(135deg, #f8fbff 0%, #f1f7ff 45%, #f4fff8 100%);
+                background-color: #070A13;
+                background-image: 
+                    radial-gradient(at 0% 0%, rgba(0, 229, 255, 0.05) 0px, transparent 50%),
+                    radial-gradient(at 100% 100%, rgba(162, 0, 255, 0.05) 0px, transparent 50%);
+                background-attachment: fixed;
+                font-family: 'Inter', sans-serif;
             }
 
-            .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 {
-                color: #0f172a;
+            /* Typography */
+            h1, h2, h3, h4, h5, h6 {
+                font-family: 'Outfit', sans-serif;
+                color: #ffffff;
+                letter-spacing: -0.02em;
             }
 
-            .stApp p, .stApp li, .stApp span, .stApp label {
-                color: #1f2937;
+            p, li, span, label {
+                color: #e2e8f0;
             }
 
             .stMarkdown, .stMarkdown p, .stMarkdown span, .stMarkdown div, .stMarkdown li {
-                color: #1f2937;
+                color: #cbd5e1;
             }
 
+            /* Sidebar */
             [data-testid="stSidebar"] {
-                background: #f8fafc;
-                border-right: 1px solid #e5e7eb;
+                background: rgba(11, 15, 25, 0.7);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                border-right: 1px solid rgba(255, 255, 255, 0.05);
             }
 
-            [data-testid="stSidebar"] h1,
-            [data-testid="stSidebar"] h2,
-            [data-testid="stSidebar"] h3,
-            [data-testid="stSidebar"] p,
-            [data-testid="stSidebar"] span,
-            [data-testid="stSidebar"] label,
-            [data-testid="stSidebar"] div {
-                color: #0f172a;
+            [data-testid="stSidebar"] * {
+                color: #e2e8f0;
             }
 
+            /* Block Container */
             .block-container {
-                padding-top: 1.5rem;
-                padding-bottom: 2.5rem;
+                padding-top: 2rem;
+                padding-bottom: 3rem;
             }
 
-            h1, h2, h3 {
-                font-family: 'Space Grotesk', sans-serif;
-                letter-spacing: -0.01em;
-            }
-
-            .stApp {
-                font-family: 'IBM Plex Sans', sans-serif;
-            }
-
+            /* Custom Hero Section */
             .hero {
-                padding: 1.5rem 1.75rem;
-                border-radius: 18px;
-                background: #ffffff;
-                border: 1px solid #e5e7eb;
-                box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
-                margin-bottom: 1.25rem;
+                padding: 3rem 2rem;
+                border-radius: 24px;
+                background: rgba(255, 255, 255, 0.02);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+                margin-bottom: 2rem;
+                text-align: center;
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .hero::before {
+                content: '';
+                position: absolute;
+                top: -50%;
+                left: -50%;
+                width: 200%;
+                height: 200%;
+                background: radial-gradient(circle, rgba(0,229,255,0.05) 0%, transparent 50%);
+                z-index: 0;
             }
 
             .hero-title {
-                font-size: 2.1rem;
-                margin-bottom: 0.25rem;
-                color: #0f172a;
+                font-family: 'Outfit', sans-serif;
+                font-size: 3.5rem;
+                font-weight: 700;
+                margin-bottom: 0.5rem;
+                background: linear-gradient(135deg, #ffffff 0%, #00e5ff 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                position: relative;
+                z-index: 1;
             }
 
             .hero-subtitle {
-                color: #475569;
-                font-size: 1rem;
-                margin-bottom: 0.75rem;
+                color: #94a3b8;
+                font-size: 1.1rem;
+                margin-bottom: 1.5rem;
+                position: relative;
+                z-index: 1;
+                font-weight: 300;
             }
 
             .pill {
                 display: inline-block;
-                padding: 0.35rem 0.7rem;
+                padding: 0.4rem 1rem;
                 border-radius: 999px;
                 font-size: 0.85rem;
-                background: #e6f6ff;
-                color: #0b5cab;
-                margin-right: 0.35rem;
+                background: rgba(0, 229, 255, 0.1);
+                border: 1px solid rgba(0, 229, 255, 0.2);
+                color: #00e5ff;
+                margin: 0 0.4rem;
+                position: relative;
+                z-index: 1;
+                font-weight: 500;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
             }
 
+            /* Cards & Glassmorphism */
             .section-card {
-                background: #ffffff;
-                border: 1px solid #e5e7eb;
+                background: rgba(17, 22, 37, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.08);
                 border-radius: 16px;
-                padding: 1rem 1.25rem;
-                box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
-                margin-bottom: 1rem;
-                color: #0f172a;
+                padding: 1.5rem;
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+                margin-bottom: 1.5rem;
+                color: #e2e8f0;
+                transition: transform 0.2s ease, border-color 0.2s ease;
+            }
+            
+            .section-card:hover {
+                border-color: rgba(0, 229, 255, 0.3);
+                transform: translateY(-2px);
             }
 
-            .stButton > button {
-                background: linear-gradient(90deg, #38bdf8, #22c55e);
-                color: #ffffff;
-                border: none;
-                border-radius: 12px;
-                padding: 0.6rem 1.2rem;
-                font-weight: 600;
-                letter-spacing: 0.01em;
-                transition: transform 0.1s ease, box-shadow 0.1s ease;
-            }
-
-            .stDownloadButton > button {
-                background: #22c55e !important;
+            /* Buttons */
+            .stButton > button, .stDownloadButton > button {
+                background: rgba(255, 255, 255, 0.05) !important;
                 color: #ffffff !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                border-radius: 8px !important;
+                padding: 0.6rem 1.5rem !important;
+                font-weight: 500 !important;
+                letter-spacing: 0.02em;
+                transition: all 0.2s ease !important;
+                box-shadow: none !important;
+            }
+
+            .stButton > button:hover, .stDownloadButton > button:hover {
+                background: rgba(0, 229, 255, 0.1) !important;
+                border-color: rgba(0, 229, 255, 0.4) !important;
+                color: #00e5ff !important;
+                transform: translateY(-2px) !important;
+                box-shadow: 0 4px 12px rgba(0, 229, 255, 0.15) !important;
+            }
+
+            /* Rank Candidates Button - Vibrant Gradient */
+            [data-testid="stMainBlockContainer"] .stButton > button[kind="primary"],
+            .stButton > button:has-text("Rank Candidates") {
+                background: linear-gradient(135deg, #00d2ff 0%, #7b2ff7 100%) !important;
                 border: none !important;
-                border-radius: 12px !important;
+                color: #ffffff !important;
+                font-weight: 700 !important;
+                letter-spacing: 0.05em !important;
+                box-shadow: 0 4px 20px rgba(0, 210, 255, 0.3) !important;
+            }
+            .stButton > button[kind="primary"]:hover {
+                background: linear-gradient(135deg, #00b4d8 0%, #5a1fc9 100%) !important;
+                box-shadow: 0 6px 28px rgba(0, 210, 255, 0.45) !important;
+                transform: translateY(-3px) !important;
             }
 
-            .stButton > button:hover {
-                transform: translateY(-1px);
-                box-shadow: 0 10px 18px rgba(56, 189, 248, 0.25);
-            }
-
+            /* File Uploader */
             .stFileUploader {
-                padding: 0.4rem 0;
+                padding: 0.5rem 0;
             }
 
             div[data-testid="stFileUploader"] section {
-                background: #f8fafc;
-                border: 1px dashed #cbd5e1;
-                border-radius: 12px;
-                padding: 0.75rem;
+                background: rgba(17, 22, 37, 0.6);
+                border: 1px dashed rgba(255, 255, 255, 0.2);
+                border-radius: 16px;
+                padding: 1.5rem;
+                transition: all 0.2s ease;
+            }
+            
+            div[data-testid="stFileUploader"] section:hover {
+                border-color: #00e5ff;
+                background: rgba(0, 229, 255, 0.02);
             }
 
             div[data-testid="stFileUploader"] section div[role="button"] {
-                background: #ffffff;
-                border: 1px solid #cbd5e1;
-                color: #0f172a;
-                font-weight: 600;
-                border-radius: 10px;
-            }
-
-            div[data-testid="stFileUploader"] section button,
-            div[data-testid="stFileUploader"] section button * {
-                background: #ffffff !important;
-                color: #0f172a !important;
-                border-color: #cbd5e1 !important;
-            }
-
-            div[data-testid="stFileUploader"] section button:hover,
-            div[data-testid="stFileUploader"] section button:hover * {
-                border-color: #cbd5e1 !important;
-                box-shadow: none !important;
-                transform: none;
-            }
-
-            div[data-testid="stFileUploader"] section button:focus,
-            div[data-testid="stFileUploader"] section button:focus-visible {
-                outline: none !important;
-                box-shadow: none !important;
-            }
-
-            div[data-testid="stFileUploader"] section button:active,
-            div[data-testid="stFileUploader"] section button:active * {
-                transform: translateY(1px) scale(0.98);
-                box-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.12) !important;
-            }
-
-            div[data-testid="stFileUploader"] section button:disabled,
-            div[data-testid="stFileUploader"] section button:disabled * {
-                background: #f8fafc !important;
-                color: #94a3b8 !important;
-                border-color: #e2e8f0 !important;
-            }
-
-            div[data-testid="stFileUploader"] section div[role="button"]:hover {
-                border-color: #38bdf8;
-                box-shadow: 0 6px 12px rgba(56, 189, 248, 0.18);
-            }
-
-            div[data-testid="stFileUploader"] small {
-                color: #64748b;
-            }
-
-            div[data-testid="stFileUploader"] label {
-                color: #0f172a;
-            }
-
-            .stDataFrame,
-            div[data-testid="stDataFrame"] {
-                background: #ffffff;
-                border-radius: 12px;
-                border: 1px solid #e5e7eb;
-                --gdg-bg-cell: #ffffff;
-                --gdg-bg-header: #f8fafc;
-                --gdg-bg-header-has-focus: #eef2ff;
-                --gdg-border-color: #e2e8f0;
-                --gdg-text-dark: #0f172a;
-                --gdg-text-medium: #475569;
-                --gdg-text-light: #94a3b8;
-                --gdg-accent-color: #22c55e;
-                --gdg-accent-fg: #ffffff;
-                --gdg-accent-light: #bbf7d0;
-                --gdg-link-color: #0ea5e9;
-                --gdg-rounding-radius: 8px;
-            }
-
-            div[data-testid="stDataFrame"] {
-                overflow: visible !important;
-            }
-
-            div[data-testid="stDataFrame"] button {
-                opacity: 1 !important;
-                visibility: visible !important;
-            }
-
-            div[data-testid="stDataFrame"] svg {
-                opacity: 1 !important;
-                visibility: visible !important;
-            }
-
-            .highlight {
-                color: #0f172a;
-                font-weight: 600;
-            }
-
-            [data-testid="stSidebar"] [data-testid="stExpander"] > div[role="button"] p,
-            [data-testid="stSidebar"] [data-testid="stExpander"] > div[role="button"] p,
-            [data-testid="stSidebar"] [data-testid="stExpander"] button[role="button"] p,
-            [data-testid="stSidebar"] [data-testid="stExpander"] [data-testid="stExpanderToggle"] p {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 color: #ffffff;
                 font-weight: 600;
+                border-radius: 10px;
+                transition: all 0.2s ease;
             }
 
-            [data-testid="stSidebar"] [data-testid="stExpander"] p {
-                color: #0f172a;
+            /* DataFrames */
+            .stDataFrame, div[data-testid="stDataFrame"] {
+                background: rgba(17, 22, 37, 0.6);
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                --gdg-bg-cell: transparent;
+                --gdg-bg-header: rgba(0, 0, 0, 0.2);
+                --gdg-bg-header-has-focus: rgba(0, 229, 255, 0.1);
+                --gdg-border-color: rgba(255, 255, 255, 0.05);
+                --gdg-text-dark: #ffffff;
+                --gdg-text-medium: #cbd5e1;
+                --gdg-text-light: #94a3b8;
+                --gdg-accent-color: #00e5ff;
             }
 
-            [data-testid="stSidebar"] [data-testid="stPopoverButton"] button {
-                width: 28px !important;
-                height: 28px !important;
-                min-height: 28px !important;
-
-                border-radius: 6px !important;
-
-                background: #f1f5f9 !important;
-                color: #475569 !important;
-
-                border: 1px solid #e2e8f0 !important;
-
-                padding: 0 !important;
-
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-
-                box-shadow: none !important;
+            /* Metric Cards Override */
+            [data-testid="stMetricValue"] {
+                color: #00e5ff !important;
+                font-family: 'Outfit', sans-serif;
+                font-weight: 700;
             }
-
-            [data-testid="stSidebar"] [data-testid="stPopoverButton"] button:hover {
-                background: #cbd5e1 !important;
+            [data-testid="stMetricLabel"] {
+                color: #94a3b8 !important;
+                font-size: 0.9rem;
             }
-
-            [data-testid="stPopoverBody"] {
-                background: white !important;
-
-                border: 1px solid #e5e7eb !important;
-
-                border-radius: 10px !important;
-
-                padding: 6px !important;
-
-                min-width: 120px !important;
-
-                box-shadow: 0 8px 20px rgba(0,0,0,0.12) !important;
-            }
-
-            div[data-testid="stPopoverBody"] .stButton > button {
-
-                width: 100% !important;
-
-                background: white !important;
-
-                color: #0f172a !important;
-
-                border: none !important;
-
-                border-radius: 6px !important;
-
-                text-align: left !important;
-
-                padding: 8px 10px !important;
-
-                font-size: 14px !important;
-
-                box-shadow: none !important;
-            }
-
-            div[data-testid="stPopoverBody"] .stButton > button:hover {
-                background: #f8fafc !important;
-                color: #0f172a !important;
-            }
-
-            [data-testid="stSidebar"] [data-testid="stExpander"] .stButton button {
-                background: #f1f5f9 !important;
-                color: #475569 !important;
-                border-radius: 6px !important;
-                padding: 0.05rem 0.45rem !important;
-                font-weight: 600;
-                font-size: 0.72rem;
-                min-height: 1.4rem;
-                line-height: 1.1;
-                border: 1px solid #e2e8f0 !important;
-                box-shadow: none !important;
-            }
-            [data-testid="stSidebar"] [data-testid="stExpander"] {
-            background: #ffffff !important;
-            border: 1px solid #e5e7eb !important;
-            border-radius: 12px !important;
-            margin-bottom: 10px !important;
-            overflow: hidden !important;
-            }
-
-            [data-testid="stSidebar"] [data-testid="stExpander"] > div[role="button"] {
-                background: #ffffff !important;
-            }
-
-            [data-testid="stSidebar"] [data-testid="stExpander"] > div[role="button"] p {
-                color: #0f172a !important;
-                font-weight: 600 !important;
-            }
-
-            [data-testid="stSidebar"] [data-testid="stExpander"] .stButton button:hover {
-                background: #e2e8f0 !important;
-                color: #1e293b !important;
-                transform: none;
-                box-shadow: none;
-            }
-                background: #e2e8f0;
-                color: #1e293b;
-                transform: none;
-                box-shadow: none;
-            }
-
-            [data-testid="stExpander"] details summary {
-                background: #ffffff !important;
-                color: #0f172a !important;
-                border-radius: 10px !important;
-            }
-
-            [data-testid="stExpander"] details summary p {
-                color: #0f172a !important;
-                font-weight: 600 !important;
-            }
-
-            [data-testid="stExpander"] details {
-                background: #ffffff !important;
-            }
-
+            
+            /* Expanders */
             [data-testid="stExpander"] {
-                background: #ffffff !important;
+                background: rgba(17, 22, 37, 0.6) !important;
+                border: 1px solid rgba(255, 255, 255, 0.08) !important;
+                border-radius: 12px !important;
+            }
+            [data-testid="stExpander"] details summary p {
+                color: #ffffff !important;
+                font-weight: 600 !important;
+            }
+            
+            /* Highlight */
+            .highlight {
+                color: #00e5ff;
+                font-weight: 600;
             }
 
-            div[data-testid="stDataFrame"] button {
-                background: transparent !important;
-                color: #64748b !important;
-                border: none !important;
+            /* Sidebar Expander Buttons */
+            [data-testid="stSidebar"] [data-testid="stExpander"] .stButton > button {
+                background: rgba(255, 255, 255, 0.05) !important;
+                color: #cbd5e1 !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                border-radius: 6px !important;
+                padding: 0.2rem 0.5rem !important;
+                font-weight: 500 !important;
+                font-size: 0.85rem !important;
+                min-height: 2rem !important;
                 box-shadow: none !important;
+                transition: all 0.2s ease;
             }
-
-            div[data-testid="stDataFrame"] button:hover {
-                background: #f1f5f9 !important;
-                color: #0f172a !important;
-            }
-
-            div[data-testid="stDataFrame"] svg {
-                fill: #64748b !important;
-                color: #64748b !important;
+            [data-testid="stSidebar"] [data-testid="stExpander"] .stButton > button:hover {
+                background: rgba(0, 229, 255, 0.1) !important;
+                color: #ffffff !important;
+                border-color: rgba(0, 229, 255, 0.3) !important;
+                transform: translateY(-1px) !important;
+                box-shadow: 0 2px 8px rgba(0, 229, 255, 0.15) !important;
             }
         </style>
         """,
@@ -401,10 +396,12 @@ def render_hero():
         """
         <div class="hero">
             <div class="hero-title">Intelligent Resume Screening System</div>
-            <div class="hero-subtitle">Rank candidates faster with skill-aware matching, SVM insights, and clarity-first scoring.</div>
-            <span class="pill">Skill Match</span>
-            <span class="pill">SVM Classification</span>
-            <span class="pill">Readable Insights</span>
+            <div class="hero-subtitle">Elevate your hiring with Machine learning powered resume analysis and precise skill matching.</div>
+            <div style="margin-top: 1rem;">
+                <span class="pill">Skill Context Matrix</span>
+                <span class="pill">SVM Engine</span>
+                <span class="pill">Actionable Insights</span>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -505,30 +502,33 @@ def build_candidate_report(
 
 def render_score_wheel(title, keyword_score, hard_skill_score, soft_skill_score, final_score):
     rings = [
-        ("Keyword", keyword_score, "#38bdf8", 1.0),
-        ("Hard Skills", hard_skill_score, "#22c55e", 0.78),
-        ("Soft Skills", soft_skill_score, "#f59e0b", 0.56),
+        ("Keyword", keyword_score, "#00e5ff", 1.0),
+        ("Hard Skills", hard_skill_score, "#a200ff", 0.78),
+        ("Soft Skills", soft_skill_score, "#ff00a2", 0.56),
     ]
 
     fig, ax = plt.subplots(figsize=(2.6, 2.6))
+    fig.patch.set_alpha(0.0)
+    ax.set_facecolor('none')
+
     for _, value, color, radius in rings:
         ax.pie(
             [value, max(0.0, 1 - value)],
             radius=radius,
-            colors=[color, "#e5e7eb"],
+            colors=[color, "#1a2235"],
             startangle=90,
             counterclock=False,
-            wedgeprops=dict(width=0.18, edgecolor="white"),
+            wedgeprops=dict(width=0.18, edgecolor="none"),
         )
 
-    ax.text(0, 0.04, f"{final_score:.0%}", ha="center", va="center", fontsize=12, fontweight="bold", color="#0f172a")
-    ax.text(0, -0.16, "Overall", ha="center", va="center", fontsize=8, color="#64748b")
+    ax.text(0, 0.04, f"{final_score:.0%}", ha="center", va="center", fontsize=12, fontweight="bold", color="#ffffff")
+    ax.text(0, -0.16, "Overall", ha="center", va="center", fontsize=8, color="#94a3b8")
     ax.set(aspect="equal")
     ax.axis("off")
 
     st.caption(title)
     st.pyplot(fig, use_container_width=False)
-    st.caption("Keyword (blue) • Hard Skills (green) • Soft Skills (orange)")
+    st.caption("Keyword (Cyan) • Hard Skills (Purple) • Soft Skills (Pink)")
     plt.close(fig)
 
 def generate_strengths_weaknesses(row):
@@ -953,7 +953,7 @@ def manager_view():
         key="manager_resumes"
     )
 
-    if st.button("Rank Candidates 🚀", use_container_width=True):
+    if st.button("Rank Candidates 🚀", use_container_width=True, type="primary"):
         if job_description_file and resume_files:
             progress = st.progress(0)
             status = st.empty()
@@ -1277,12 +1277,13 @@ def main():
     if view == "Applicant View":
         applicant_view()
     else:
-        manager_view()
+        if render_manager_auth():
+            manager_view()
 
     st.sidebar.markdown("---")
     st.sidebar.info("This app helps you match resumes to job descriptions and rank candidates.")
 
-    if view == "Manager View" and st.session_state.history:
+    if view == "Manager View" and st.session_state.get("manager_logged_in") and st.session_state.history:
         st.sidebar.markdown("---")
         st.sidebar.subheader("Analysis History")
         for i, entry in enumerate(st.session_state.history):
@@ -1312,6 +1313,9 @@ def main():
 
                 if view_clicked:
                     st.session_state.selected_history_id = entry['id']
+                    st.session_state.ranked_df = entry['results_df']
+                    st.session_state.ranking_done = True
+                    st.rerun()
                 if delete_clicked:
                     st.session_state.history.pop(i)
                     if st.session_state.get('selected_history_id') == entry['id']:
