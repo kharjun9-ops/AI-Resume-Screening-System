@@ -617,6 +617,9 @@ def _build_svm_training_data(jd_text, resumes_folder, partial_label):
     training_texts = []
     labels = []
 
+    if not os.path.exists(resumes_folder):
+        return training_texts, labels
+
     for filename in os.listdir(resumes_folder):
         file_path = os.path.join(resumes_folder, filename)
         if os.path.isdir(file_path):
